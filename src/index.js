@@ -2,8 +2,27 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 const http = require('http');
+const mongoose = require('mongoose');
 const socketIO = require('socket.io');
+const Message = require('./models/Message.js');
 const PORT = process.env.PORT || 8080;
+
+let readyDB = false;
+mongoose
+	.connect(
+		`mongodb+srv://${process.env.USER}:${process.env.PASS}@cluster0.w7rpo.mongodb.net/${process.env.DB}?retryWrites=true&w=majority`,
+		{
+			useNewUrlParser: true,
+			useUnifiedTopology: true,
+		}
+	)
+	.then((res) => {
+		console.log('CONECTADO A LA DB');
+		readyDB = true;
+	})
+	.catch((err) => {
+		console.log('CONEXIÓN FALLIDA');
+	});
 
 const server = http.createServer(app);
 const io = socketIO(server, {
@@ -17,13 +36,47 @@ const io = socketIO(server, {
 	},
 });
 
-let usersConnected = 0;
 io.on('connection', (socket) => {
-	usersConnected++;
 	console.log('CONECTADO');
-	socket.emit('userConnected', usersConnected);
-	socket.on('sendMessage', (message) => {
-		socket.broadcast.emit('sendNewMessage', message);
+	let timeReadyDB = setInterval(() => {
+		if (readyDB === true) {
+			socket.emit('dbStatus', true);
+			consultMessages();
+			clearInterval(timeReadyDB);
+		}
+	}, 1000);
+	const consultMessages = async () => {
+		try {
+			const messages = await Message.find();
+			if (messages.length > 0) {
+				socket.emit('receivedMessages', messages);
+				socket.emit('executeScroll');
+			}
+		} catch (error) {
+			console.log(error);
+		}
+	};
+	socket.on('sendMessage', async (message) => {
+		try {
+			const newMessage = await Message.create(
+				{
+					text: message.text,
+				},
+				(err, msg) => {
+					if (err) {
+						return console.log(err);
+					} else {
+						console.log('MENSAJE ENVIADO');
+					}
+				}
+			);
+			const messages = await Message.find();
+			socket.emit('receivedMessages', messages);
+			socket.broadcast.emit('receivedMessages', messages);
+			socket.emit('executeScroll');
+		} catch (error) {
+			return console.log(error);
+		}
 	});
 	socket.on('disconnect', () => {
 		console.log('DESCONECTADO');
