@@ -51,6 +51,7 @@ io.on('connection', (socket) => {
 			if (messages.length > 0) {
 				socket.emit('receivedMessages', messages);
 				socket.emit('executeScroll');
+				socket.broadcast.emit('executeScroll');
 			}
 		} catch (error) {
 			console.log(error);
